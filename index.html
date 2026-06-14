@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#070812" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Hermes" />
+  <title>Hermes Web</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <aside id="sidebar" class="sidebar" aria-label="Sessions">
+      <div class="side-head">
+        <div class="brand compact">
+          <div class="orb" aria-hidden="true"></div>
+          <div>
+            <div class="brand-title">Hermes Web</div>
+            <div id="menuModelLabel" class="brand-subtitle">Initialisiere Modell…</div>
+          </div>
+        </div>
+        <button id="closeSidebarButton" class="icon-button mobile-only" aria-label="Sessions schließen">×</button>
+      </div>
+      <div class="side-actions">
+        <button id="newSessionButton" class="primary full">Neue Session</button>
+        <button id="refreshSessionsButton" class="secondary full">Sessions laden</button>
+      </div>
+      <div id="sessionList" class="session-list"></div>
+    </aside>
+
+    <div id="scrim" class="scrim"></div>
+
+    <section class="workspace">
+      <header class="topbar">
+        <button id="sessionsButton" class="icon-button mobile-only" aria-label="Sessions öffnen">☰</button>
+        <div class="brand top-brand">
+          <div class="orb" aria-hidden="true"></div>
+          <div>
+            <div class="brand-title">Hermes Agent</div>
+            <div id="connectionLabel" class="brand-subtitle">Initialisiere…</div>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="stopButton" class="icon-button danger" aria-label="Lauf stoppen" disabled>■</button>
+          <button id="settingsButton" class="icon-button" aria-label="Einstellungen" type="button">⚙</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <section id="messages" class="messages" aria-live="polite"></section>
+      </main>
+
+      <div id="activityBar" class="activity-bar idle">
+        <span id="activityDot" class="activity-dot"></span>
+        <span id="activityPhase">Bereit</span>
+        <span id="activityDetail">Keine laufende Anfrage</span>
+        <span id="activityMetrics">Events: 0 · Δ: 0</span>
+      </div>
+
+      <div id="approvalBar" class="approval-bar">
+        <div>
+          <strong>Freigabe erforderlich</strong>
+          <div id="approvalText">Hermes wartet auf eine Entscheidung.</div>
+        </div>
+        <div class="approval-actions">
+          <button id="denyButton" class="secondary" type="button">Ablehnen</button>
+          <button id="approveButton" class="primary" type="button">Freigeben</button>
+        </div>
+      </div>
+
+      <div id="attachmentTray" class="attachment-tray"></div>
+      <form id="composer" class="composer">
+        <input id="fileInput" type="file" accept="image/*" multiple hidden />
+        <button id="attachButton" class="icon-button" type="button" aria-label="Datei anhängen">＋</button>
+        <textarea id="prompt" rows="1" placeholder="Frag Hermes…" autocomplete="off"></textarea>
+        <button id="sendButton" class="send" type="submit">Senden</button>
+      </form>
+    </section>
+
+    <section id="settingsPanel" class="settings-panel" aria-label="Einstellungen" aria-hidden="true">
+      <div class="panel-head">
+        <div>
+          <h2>Einstellungen</h2>
+          <p>Verbindung zum Hermes API Server</p>
+        </div>
+        <button id="closeSettingsButton" class="icon-button" aria-label="Einstellungen schließen" type="button">×</button>
+      </div>
+      <label>
+        Hermes API Basis-URL
+        <input id="apiBase" type="url" inputmode="url" placeholder="https://host.tailnet.ts.net/hermes" />
+      </label>
+      <label>
+        API Token
+        <input id="apiKey" type="password" placeholder="API_SERVER_KEY" />
+      </label>
+      <label>
+        Aktuelle Session-ID
+        <input id="sessionId" type="text" placeholder="wird automatisch erzeugt" />
+      </label>
+      <label>
+        Provider
+        <select id="providerName"></select>
+      </label>
+      <label>
+        Modell suchen
+        <input id="modelFilter" type="search" placeholder="Modellname filtern…" autocomplete="off" />
+      </label>
+      <label>
+        Modell
+        <select id="modelName" size="8"></select>
+      </label>
+      <div id="modelPickerMeta" class="hint">/model öffnet diese Auswahl. Modelle werden aus Hermes' eigener Provider-Inventur geladen.</div>
+      <p class="hint">Remote-Wechsel: Provider auswählen → Modell auswählen → <strong>Modell setzen</strong>. WebUI-Kommandos laufen lokal im Browser/Proxy, nicht als normale Agent-Nachricht.</p>
+      <div class="settings-actions">
+        <button id="testConnectionButton" class="secondary" type="button">Testen</button>
+        <button id="setModelButton" class="secondary" type="button">Modell setzen</button>
+        <button id="saveSettingsButton" class="primary" type="button">Speichern</button>
+      </div>
+      <p class="hint">Standardmäßig nutzt die App <code>/hermes</code> als Same-Origin-Proxy. Mit Tailscale Serve öffnest du nur diese PWA-URL; der Python-Server leitet intern an Hermes API Server weiter.</p>
+    </section>
+  </div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+[Unit]
+Description=Hermes Web browser frontend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HERMES_WEB_DIR=%h/hermes-web
+Environment=HERMES_WEB_HOST=127.0.0.1
+Environment=HERMES_WEB_PORT=4173
+Environment=HERMES_WEB_API=http://127.0.0.1:8642
+# Empty because Caddy uses handle_path /hermes/* and strips the prefix before proxying.
+Environment=HERMES_WEB_BASE_PATH=
+ExecStart=%h/hermes-web/bin/hermes-web
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

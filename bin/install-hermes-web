@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+chmod +x "$APP_DIR/bin/hermes-web"
+mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
+ln -sf "$APP_DIR/bin/hermes-web" "$HOME/.local/bin/hermes-web"
+cp "$APP_DIR/systemd/hermes-web.service" "$HOME/.config/systemd/user/hermes-web.service"
+systemctl --user daemon-reload || true
+cat <<MSG
+Installed Hermes Web.
+
+Start foreground:
+  hermes-web
+
+Start as user service:
+  systemctl --user enable --now hermes-web
+  systemctl --user status hermes-web
+
+Expose through Tailscale:
+  tailscale serve --bg --https 443 http://127.0.0.1:4173
+MSG
