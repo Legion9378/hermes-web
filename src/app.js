@@ -8,7 +8,6 @@ import {
   canStopRun,
   buildInputPayload,
   isApprovalEvent,
-  extractToolEvent,
   nextActivityState,
   parseWebCommand,
   defaultApiBase,
@@ -344,7 +343,7 @@ async function loadMessages(sessionId) {
   else addMessage('system', `${items.length} Nachrichten aus der Session-Historie geladen.`);
   for (const msg of items) {
     const parts = buildMessageParts(msg.content);
-    if (msg.role === 'tool') addToolCard({ title: msg.tool_name || msg.name || 'Tool Output', body: parts.text || JSON.stringify(msg, null, 2) });
+    if (msg.role === 'tool') continue;
     else if (msg.role === 'assistant') addMessage('assistant', parts.text || '');
     else addMessage(msg.role === 'user' ? 'user' : 'system', parts.text || '');
     for (const attachment of parts.attachments) {
@@ -421,7 +420,10 @@ async function streamTurn(inputText) {
       if (isApprovalEvent(event, data)) { showApproval(data); continue; }
       const delta = extractDelta(event, data);
       if (delta) { gotText = true; state.assistantBuffer += delta; renderMessageContent(assistant, state.assistantBuffer); els.messages.scrollTop = els.messages.scrollHeight; continue; }
-      const tool = extractToolEvent(event, data); if (tool) addToolCard(tool);
+      if (event.includes('tool') || event.includes('function')) {
+        const toolName = data?.tool_name || data?.name || data?.tool || data?.function?.name || event;
+        if (els.activityDetail) els.activityDetail.textContent = `${toolName} läuft…`;
+      }
       if (event === 'run.completed' && Array.isArray(data?.messages)) reconcileCompletedMessages(data.messages, assistant);
       if (event.includes('error')) addMessage('error', typeof data === 'string' ? data : JSON.stringify(data));
     }
@@ -433,8 +435,6 @@ async function streamTurn(inputText) {
 }
 
 function reconcileCompletedMessages(messages, liveAssistantEl) {
-  const toolMessages = messages.filter(m => m.role === 'tool');
-  for (const msg of toolMessages) addToolCard({ title: msg.tool_name || msg.name || 'Tool Output', body: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2) });
   const finalAssistant = [...messages].reverse().find(m => m.role === 'assistant' && m.content && !m.tool_calls);
   if (finalAssistant && !state.assistantBuffer.trim()) renderMessageContent(liveAssistantEl, finalAssistant.content);
 }

@@ -64,7 +64,7 @@ code { color: #c4b5fd; }
 .message pre code { padding: 0; background: transparent; }
 .message a { color: #67e8f9; }
 .inline-image { max-width: min(100%, 520px); border-radius: 16px; border: 1px solid var(--line); }
-.tool-card { align-self: flex-start; max-width: min(760px, 94%); border-radius: 16px; border: 1px solid rgba(34,211,238,.18); background: rgba(34,211,238,.08); overflow: hidden; }
+.tool-card { display: none; }
 .tool-card summary { cursor: pointer; padding: 12px 14px; color: #b7c2ea; font-weight: 700; }
 .tool-card pre { margin: 0 12px 12px; color: #dbeafe; white-space: pre-wrap; }
 .approval-bar { display: none; align-items: center; justify-content: space-between; gap: 12px; padding: 12px max(14px, env(safe-area-inset-right)) 12px max(14px, env(safe-area-inset-left)); background: rgba(251,191,36,.11); border-top: 1px solid rgba(251,191,36,.24); color: #fef3c7; }
