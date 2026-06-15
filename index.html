@@ -102,7 +102,11 @@
         <input id="autoSpeak" type="checkbox" />
         Antworten automatisch vorlesen
       </label>
-      <button id="stopSpeechButton" class="secondary" type="button">Vorlesen stoppen</button>
+      <div class="speech-actions">
+        <button id="activateSpeechButton" class="secondary" type="button">Audio aktivieren</button>
+        <button id="stopSpeechButton" class="secondary" type="button">Vorlesen stoppen</button>
+      </div>
+      <div id="speechStatus" class="hint">Audio noch nicht aktiviert.</div>
       <label>
         Aktuelle Session-ID
         <input id="sessionId" type="text" placeholder="wird automatisch erzeugt" />

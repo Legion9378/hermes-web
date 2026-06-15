@@ -22,7 +22,7 @@ const state = {
   apiKey: localStorage.getItem('hermes.apiKey') || '',
   serverAuthAvailable: false,
   autoSpeak: localStorage.getItem('hermes.autoSpeak') !== 'false',
-  speechEnabled: false,
+  speechEnabled: localStorage.getItem('hermes.speechEnabled') === 'true',
   sessionId: localStorage.getItem('hermes.sessionId') || '',
   model: localStorage.getItem('hermes.model') || '',
   provider: localStorage.getItem('hermes.provider') || '',
@@ -39,7 +39,7 @@ const state = {
 const els = {
   messages: $('messages'), prompt: $('prompt'), sendButton: $('sendButton'), stopButton: $('stopButton'),
   connectionLabel: $('connectionLabel'), menuModelLabel: $('menuModelLabel'), settingsPanel: $('settingsPanel'), sidebar: $('sidebar'), scrim: $('scrim'),
-  apiBase: $('apiBase'), apiKey: $('apiKey'), serverAuthHint: $('serverAuthHint'), autoSpeak: $('autoSpeak'), stopSpeechButton: $('stopSpeechButton'), sessionId: $('sessionId'), model: $('modelName'), provider: $('providerName'), modelFilter: $('modelFilter'), modelPickerMeta: $('modelPickerMeta'), sessionList: $('sessionList'),
+  apiBase: $('apiBase'), apiKey: $('apiKey'), serverAuthHint: $('serverAuthHint'), autoSpeak: $('autoSpeak'), activateSpeechButton: $('activateSpeechButton'), stopSpeechButton: $('stopSpeechButton'), speechStatus: $('speechStatus'), sessionId: $('sessionId'), model: $('modelName'), provider: $('providerName'), modelFilter: $('modelFilter'), modelPickerMeta: $('modelPickerMeta'), sessionList: $('sessionList'),
   fileInput: $('fileInput'), attachButton: $('attachButton'), attachmentTray: $('attachmentTray'), approvalBar: $('approvalBar'),
   approvalText: $('approvalText'), approveButton: $('approveButton'), denyButton: $('denyButton'),
   activityBar: $('activityBar'), activityPhase: $('activityPhase'), activityDetail: $('activityDetail'), activityMetrics: $('activityMetrics'),
@@ -109,13 +109,28 @@ async function loadBootstrap() {
 }
 
 function renderMessageContent(el, text) {
-  el.innerHTML = renderMarkdown(text || '');
+  const target = el.querySelector?.('.message-content') || el;
+  target.innerHTML = renderMarkdown(text || '');
+  if (el.classList?.contains('message')) el.dataset.speechText = text || '';
 }
 
 function addMessage(role, text = '', options = {}) {
   const el = document.createElement('div');
   el.className = `message ${role}`;
-  if (options.html) el.innerHTML = options.html;
+  if (role === 'assistant' && !options.html) {
+    const content = document.createElement('div');
+    content.className = 'message-content';
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+    const speakButton = document.createElement('button');
+    speakButton.type = 'button';
+    speakButton.className = 'message-action speak-action';
+    speakButton.textContent = 'Vorlesen';
+    speakButton.addEventListener('click', () => speakAnswer(el.dataset.speechText || content.textContent || '', { manual: true }));
+    actions.appendChild(speakButton);
+    el.append(content, actions);
+    renderMessageContent(el, text);
+  } else if (options.html) el.innerHTML = options.html;
   else if (role === 'assistant') renderMessageContent(el, text);
   else el.textContent = text;
   els.messages.appendChild(el);
@@ -150,7 +165,7 @@ function saveSettings() {
   if (state.provider) localStorage.setItem('hermes.provider', state.provider); else localStorage.removeItem('hermes.provider');
   setConnectionLabel(); renderSessions();
 }
-function openSettings() { els.apiBase.value = state.apiBase; els.apiKey.value = state.apiKey; els.sessionId.value = state.sessionId; if (els.autoSpeak) els.autoSpeak.checked = state.autoSpeak; if (els.serverAuthHint) els.serverAuthHint.textContent = state.serverAuthAvailable ? 'Server-Key aktiv: keine erneute Token-Eingabe nötig.' : 'Kein Server-Key erkannt; API Token wird im Browser gespeichert.'; if (els.model) els.model.value = state.model; if (els.provider) els.provider.value = state.provider; els.settingsPanel.classList.add('open'); els.settingsPanel.setAttribute('aria-hidden', 'false'); els.scrim.classList.add('open'); }
+function openSettings() { els.apiBase.value = state.apiBase; els.apiKey.value = state.apiKey; els.sessionId.value = state.sessionId; if (els.autoSpeak) els.autoSpeak.checked = state.autoSpeak; updateSpeechStatus(); if (els.serverAuthHint) els.serverAuthHint.textContent = state.serverAuthAvailable ? 'Server-Key aktiv: keine erneute Token-Eingabe nötig.' : 'Kein Server-Key erkannt; API Token wird im Browser gespeichert.'; if (els.model) els.model.value = state.model; if (els.provider) els.provider.value = state.provider; els.settingsPanel.classList.add('open'); els.settingsPanel.setAttribute('aria-hidden', 'false'); els.scrim.classList.add('open'); }
 function closeSettings() { els.settingsPanel.classList.remove('open'); els.settingsPanel.setAttribute('aria-hidden', 'true'); if (!els.sidebar.classList.contains('open')) els.scrim.classList.remove('open'); }
 function openSidebar() { els.sidebar.classList.add('open'); els.scrim.classList.add('open'); }
 function closeSidebar() { els.sidebar.classList.remove('open'); if (!els.settingsPanel.classList.contains('open')) els.scrim.classList.remove('open'); }
@@ -382,6 +397,13 @@ async function resolveApproval(approved) {
 }
 
 function speechSupported() { return 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window; }
+function updateSpeechStatus(text = '') {
+  if (!els.speechStatus) return;
+  if (text) els.speechStatus.textContent = text;
+  else els.speechStatus.textContent = speechSupported()
+    ? (state.speechEnabled ? 'Audio aktiv. Auto-Vorlesen darf nach Antworten starten.' : 'Audio noch nicht aktiviert. Tippe einmal „Audio aktivieren“ oder nutze „Vorlesen“ an einer Antwort.')
+    : 'Dieses Browser/WebView unterstützt keine lokale Sprachausgabe.';
+}
 function cleanSpeechText(text) {
   return String(text || '')
     .replace(/```[\s\S]*?```/g, 'Codeblock ausgelassen.')
@@ -393,16 +415,39 @@ function cleanSpeechText(text) {
 }
 function stopSpeech() {
   if (speechSupported()) window.speechSynthesis.cancel();
+  updateSpeechStatus();
 }
-function speakAnswer(text) {
-  if (!state.autoSpeak || !speechSupported()) return;
+function markSpeechEnabled(message = 'Audio aktiviert.') {
+  state.speechEnabled = true;
+  localStorage.setItem('hermes.speechEnabled', 'true');
+  updateSpeechStatus(message);
+}
+function activateSpeech() {
+  if (!speechSupported()) { updateSpeechStatus('Sprachausgabe wird von diesem Browser nicht unterstützt.'); return; }
+  stopSpeech();
+  const utterance = new SpeechSynthesisUtterance('Audio aktiviert.');
+  utterance.lang = 'de-DE';
+  utterance.rate = 1;
+  utterance.onstart = () => markSpeechEnabled('Audio aktiviert.');
+  utterance.onend = () => updateSpeechStatus('Audio aktiviert.');
+  utterance.onerror = (ev) => updateSpeechStatus(`Audio konnte nicht starten: ${ev.error || 'unbekannt'}`);
+  window.speechSynthesis.speak(utterance);
+}
+function speakAnswer(text, options = {}) {
+  const manual = Boolean(options.manual);
+  if (!speechSupported()) { updateSpeechStatus('Sprachausgabe wird von diesem Browser nicht unterstützt.'); return; }
+  if (!manual && (!state.autoSpeak || !state.speechEnabled)) return;
   const clean = cleanSpeechText(text);
   if (!clean) return;
   stopSpeech();
+  if (manual && !state.speechEnabled) markSpeechEnabled('Audio durch manuelles Vorlesen aktiviert.');
   const utterance = new SpeechSynthesisUtterance(clean.slice(0, 12000));
   utterance.lang = 'de-DE';
   utterance.rate = 1;
   utterance.pitch = 1;
+  utterance.onstart = () => updateSpeechStatus(manual ? 'Lese Antwort vor…' : 'Lese Antwort automatisch vor…');
+  utterance.onend = () => updateSpeechStatus('Vorlesen beendet.');
+  utterance.onerror = (ev) => updateSpeechStatus(`Vorlesen fehlgeschlagen: ${ev.error || 'unbekannt'}`);
   window.speechSynthesis.speak(utterance);
 }
 
@@ -448,7 +493,8 @@ async function stopActiveRun() {
 function wireEvents() {
   $('settingsButton').addEventListener('click', () => { openSettings(); if (hasAuth() && !state.modelInventory.length) loadModelInventory(false).catch((err) => { if (els.modelPickerMeta) els.modelPickerMeta.textContent = `Modelle nicht ladbar: ${err.message || err}`; }); }); $('closeSettingsButton').addEventListener('click', closeSettings);
   $('saveSettingsButton').addEventListener('click', () => { saveSettings(); closeSettings(); addMessage('system', 'Einstellungen gespeichert.'); }); $('testConnectionButton').addEventListener('click', testConnection);
-  els.autoSpeak?.addEventListener('change', () => { state.autoSpeak = els.autoSpeak.checked; localStorage.setItem('hermes.autoSpeak', String(state.autoSpeak)); if (!state.autoSpeak) stopSpeech(); });
+  els.autoSpeak?.addEventListener('change', () => { state.autoSpeak = els.autoSpeak.checked; localStorage.setItem('hermes.autoSpeak', String(state.autoSpeak)); if (!state.autoSpeak) stopSpeech(); updateSpeechStatus(); });
+  els.activateSpeechButton?.addEventListener('click', activateSpeech);
   els.stopSpeechButton?.addEventListener('click', stopSpeech);
   $('setModelButton')?.addEventListener('click', async () => { saveSettings(); try { await setRemoteModel(state.model, state.provider); } catch (err) { addMessage('error', err.message || String(err)); } });
   els.provider?.addEventListener('change', () => { state.provider = els.provider.value; state.model = ''; if (els.modelFilter) els.modelFilter.value = ''; renderModelOptions(); setConnectionLabel(); });
@@ -478,7 +524,7 @@ function wireEvents() {
 }
 
 async function boot() {
-  wireEvents(); await loadBootstrap(); if (els.autoSpeak) els.autoSpeak.checked = state.autoSpeak; setConnectionLabel(); renderSessions(); addMessage('system', state.serverAuthAvailable ? 'Hermes Web bereit. Server-Key aktiv; kein API-Token im Browser nötig.' : 'Hermes Web bereit. Öffne ⚙, trage dein API Token ein und starte eine Session.');
+  wireEvents(); await loadBootstrap(); if (els.autoSpeak) els.autoSpeak.checked = state.autoSpeak; updateSpeechStatus(); setConnectionLabel(); renderSessions(); addMessage('system', state.serverAuthAvailable ? 'Hermes Web bereit. Server-Key aktiv; kein API-Token im Browser nötig.' : 'Hermes Web bereit. Öffne ⚙, trage dein API Token ein und starte eine Session.');
   if (hasAuth()) {
     await loadModelInventory(false).catch((err) => { if (els.menuModelLabel) els.menuModelLabel.textContent = `Modell unbekannt`; console.warn('Model inventory unavailable', err); });
     await loadSessions(false);

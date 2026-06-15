@@ -173,7 +173,7 @@ Der Modellwechsel läuft über den lokalen Hermes-Web-Control-Endpoint `POST /__
 
 ### Vorlesen
 
-In den Einstellungen gibt es die Option **Antworten automatisch vorlesen**. Die erste Version nutzt die Browser-/iOS-SpeechSynthesis-Stimme lokal im Gerät und liest die finale Antwort, sobald der Stream vollständig abgeschlossen ist. Codeblöcke werden beim Vorlesen gekürzt/ersetzt. Mit **Vorlesen stoppen** kann die laufende Sprachausgabe abgebrochen werden.
+In den Einstellungen gibt es die Option **Antworten automatisch vorlesen** plus **Audio aktivieren** und **Vorlesen stoppen**. Zusätzlich bekommt jede Assistant-Antwort einen eigenen **Vorlesen**-Button, ähnlich wie bei Chat-UIs mit explizitem Audio-Control. Die erste Version nutzt die Browser-/iOS-SpeechSynthesis-Stimme lokal im Gerät. Auto-Vorlesen startet erst nach einer aktiven Audio-Freigabe durch den Nutzer, weil iOS/PWA-WebViews automatische Audioausgabe sonst häufig blockieren. Codeblöcke werden beim Vorlesen gekürzt/ersetzt.
 
 1. Tailscale auf dem iPhone aktivieren.
 2. Caddy-URL der Web-App in Safari öffnen, z. B. `http://host.tailxxxxx.ts.net/ziel/`.
