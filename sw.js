@@ -1,4 +1,4 @@
-const CACHE = 'hermes-web-v9';
+const CACHE = 'hermes-web-v10';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'hermes_web_core.mjs', 'manifest.webmanifest', 'icons/icon-192.svg', 'icons/icon-512.svg'];
 
 self.addEventListener('install', (event) => {

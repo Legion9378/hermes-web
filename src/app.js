@@ -21,6 +21,9 @@ const DEFAULT_API_BASE = defaultApiBase(location.href);
 const state = {
   apiBase: localStorage.getItem('hermes.apiBase') || DEFAULT_API_BASE,
   apiKey: localStorage.getItem('hermes.apiKey') || '',
+  serverAuthAvailable: false,
+  autoSpeak: localStorage.getItem('hermes.autoSpeak') !== 'false',
+  speechEnabled: false,
   sessionId: localStorage.getItem('hermes.sessionId') || '',
   model: localStorage.getItem('hermes.model') || '',
   provider: localStorage.getItem('hermes.provider') || '',
@@ -37,7 +40,7 @@ const state = {
 const els = {
   messages: $('messages'), prompt: $('prompt'), sendButton: $('sendButton'), stopButton: $('stopButton'),
   connectionLabel: $('connectionLabel'), menuModelLabel: $('menuModelLabel'), settingsPanel: $('settingsPanel'), sidebar: $('sidebar'), scrim: $('scrim'),
-  apiBase: $('apiBase'), apiKey: $('apiKey'), sessionId: $('sessionId'), model: $('modelName'), provider: $('providerName'), modelFilter: $('modelFilter'), modelPickerMeta: $('modelPickerMeta'), sessionList: $('sessionList'),
+  apiBase: $('apiBase'), apiKey: $('apiKey'), serverAuthHint: $('serverAuthHint'), autoSpeak: $('autoSpeak'), stopSpeechButton: $('stopSpeechButton'), sessionId: $('sessionId'), model: $('modelName'), provider: $('providerName'), modelFilter: $('modelFilter'), modelPickerMeta: $('modelPickerMeta'), sessionList: $('sessionList'),
   fileInput: $('fileInput'), attachButton: $('attachButton'), attachmentTray: $('attachmentTray'), approvalBar: $('approvalBar'),
   approvalText: $('approvalText'), approveButton: $('approveButton'), denyButton: $('denyButton'),
   activityBar: $('activityBar'), activityPhase: $('activityPhase'), activityDetail: $('activityDetail'), activityMetrics: $('activityMetrics'),
@@ -89,7 +92,22 @@ function resetActivity(label = 'Bereit') {
   renderActivity();
   if (label) els.activityDetail.textContent = label;
 }
-function authHeaders(extra = {}) { return { 'Authorization': `Bearer ${state.apiKey}`, ...extra }; }
+function hasAuth() { return Boolean(state.apiKey || state.serverAuthAvailable); }
+function authHeaders(extra = {}) { return state.apiKey ? { 'Authorization': `Bearer ${state.apiKey}`, ...extra } : { ...extra }; }
+
+async function loadBootstrap() {
+  try {
+    const root = new URL('.', location.href).href.replace(/\/+$/, '');
+    const res = await fetch(`${root}/__hermes_web/bootstrap`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!res.ok) return;
+    const data = await res.json();
+    state.serverAuthAvailable = Boolean(data.server_auth_available);
+    if (state.serverAuthAvailable && !localStorage.getItem('hermes.apiBase')) state.apiBase = normalizeBase(data.api_base || DEFAULT_API_BASE);
+    if (els.serverAuthHint) els.serverAuthHint.textContent = state.serverAuthAvailable ? 'Server-Key aktiv: Diese PWA kann ohne erneute Token-Eingabe über den lokalen Proxy arbeiten.' : 'Kein Server-Key erkannt; Token wird lokal im Browser gespeichert.';
+  } catch (err) {
+    console.warn('Bootstrap unavailable', err);
+  }
+}
 
 function renderMessageContent(el, text) {
   el.innerHTML = renderMarkdown(text || '');
@@ -122,7 +140,7 @@ function clearMessages() { els.messages.textContent = ''; }
 
 function saveSettings() {
   state.apiBase = normalizeBase(els.apiBase.value);
-  state.apiKey = els.apiKey.value.trim();
+  state.apiKey = els.apiKey.value.trim() || state.apiKey;
   state.sessionId = els.sessionId.value.trim();
   state.model = els.model?.value.trim() || '';
   state.provider = els.provider?.value.trim() || '';
@@ -133,18 +151,18 @@ function saveSettings() {
   if (state.provider) localStorage.setItem('hermes.provider', state.provider); else localStorage.removeItem('hermes.provider');
   setConnectionLabel(); renderSessions();
 }
-function openSettings() { els.apiBase.value = state.apiBase; els.apiKey.value = state.apiKey; els.sessionId.value = state.sessionId; if (els.model) els.model.value = state.model; if (els.provider) els.provider.value = state.provider; els.settingsPanel.classList.add('open'); els.settingsPanel.setAttribute('aria-hidden', 'false'); els.scrim.classList.add('open'); }
+function openSettings() { els.apiBase.value = state.apiBase; els.apiKey.value = state.apiKey; els.sessionId.value = state.sessionId; if (els.autoSpeak) els.autoSpeak.checked = state.autoSpeak; if (els.serverAuthHint) els.serverAuthHint.textContent = state.serverAuthAvailable ? 'Server-Key aktiv: keine erneute Token-Eingabe nötig.' : 'Kein Server-Key erkannt; API Token wird im Browser gespeichert.'; if (els.model) els.model.value = state.model; if (els.provider) els.provider.value = state.provider; els.settingsPanel.classList.add('open'); els.settingsPanel.setAttribute('aria-hidden', 'false'); els.scrim.classList.add('open'); }
 function closeSettings() { els.settingsPanel.classList.remove('open'); els.settingsPanel.setAttribute('aria-hidden', 'true'); if (!els.sidebar.classList.contains('open')) els.scrim.classList.remove('open'); }
 function openSidebar() { els.sidebar.classList.add('open'); els.scrim.classList.add('open'); }
 function closeSidebar() { els.sidebar.classList.remove('open'); if (!els.settingsPanel.classList.contains('open')) els.scrim.classList.remove('open'); }
 
 async function apiFetch(path, options = {}) {
-  if (!state.apiKey) throw new Error('API Token fehlt. Öffne ⚙ und trage API_SERVER_KEY ein.');
+  if (!hasAuth()) throw new Error('API Token fehlt und kein Server-Key ist aktiv. Öffne ⚙ und trage API_SERVER_KEY ein.');
   return fetch(`${state.apiBase}${path}`, { ...options, headers: authHeaders(options.headers || {}) });
 }
 
 async function webControl(path, payload = {}) {
-  if (!state.apiKey) throw new Error('API Token fehlt. Öffne ⚙ und trage API_SERVER_KEY ein.');
+  if (!hasAuth()) throw new Error('API Token fehlt und kein Server-Key ist aktiv. Öffne ⚙ und trage API_SERVER_KEY ein.');
   const root = new URL('.', location.href).href.replace(/\/+$/, '');
   return fetch(`${root}/__hermes_web${path}`, {
     method: 'POST',
@@ -295,7 +313,7 @@ async function handleWebCommand(text) {
 }
 
 async function loadSessions(showErrors = true) {
-  if (!state.apiKey) { renderSessions('Token fehlt'); return; }
+  if (!hasAuth()) { renderSessions('Token fehlt'); return; }
   try { const res = await apiFetch('/api/sessions?limit=40&include_children=true'); if (!res.ok) throw new Error(`HTTP ${res.status}`); state.sessions = normalizeSessionList(await res.json()); renderSessions(); }
   catch (err) { renderSessions('Sessions nicht ladbar'); if (showErrors) addMessage('error', `Sessions konnten nicht geladen werden: ${err.message || err}`); }
 }
@@ -364,6 +382,31 @@ async function resolveApproval(approved) {
   } catch (err) { addMessage('error', `Approval fehlgeschlagen: ${err.message || err}`); }
 }
 
+function speechSupported() { return 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window; }
+function cleanSpeechText(text) {
+  return String(text || '')
+    .replace(/```[\s\S]*?```/g, 'Codeblock ausgelassen.')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+    .replace(/[#>*_~\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function stopSpeech() {
+  if (speechSupported()) window.speechSynthesis.cancel();
+}
+function speakAnswer(text) {
+  if (!state.autoSpeak || !speechSupported()) return;
+  const clean = cleanSpeechText(text);
+  if (!clean) return;
+  stopSpeech();
+  const utterance = new SpeechSynthesisUtterance(clean.slice(0, 12000));
+  utterance.lang = 'de-DE';
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  window.speechSynthesis.speak(utterance);
+}
+
 async function streamTurn(inputText) {
   const sessionId = await ensureSession(); const assistant = addMessage('assistant', ''); let gotText = false; state.activeRunId = null; state.assistantBuffer = '';
   const message = await buildSessionMessage(inputText);
@@ -384,7 +427,9 @@ async function streamTurn(inputText) {
     }
   }
   if (!gotText && !assistant.textContent.trim()) assistant.textContent = 'Fertig. Keine Textantwort im Stream erhalten.';
+  const spokenText = state.assistantBuffer || assistant.textContent || '';
   state.pendingFiles = []; renderAttachments(); await loadSessions(false).catch(() => {});
+  speakAnswer(spokenText);
 }
 
 function reconcileCompletedMessages(messages, liveAssistantEl) {
@@ -401,8 +446,10 @@ async function stopActiveRun() {
 }
 
 function wireEvents() {
-  $('settingsButton').addEventListener('click', () => { openSettings(); if (state.apiKey && !state.modelInventory.length) loadModelInventory(false).catch((err) => { if (els.modelPickerMeta) els.modelPickerMeta.textContent = `Modelle nicht ladbar: ${err.message || err}`; }); }); $('closeSettingsButton').addEventListener('click', closeSettings);
+  $('settingsButton').addEventListener('click', () => { openSettings(); if (hasAuth() && !state.modelInventory.length) loadModelInventory(false).catch((err) => { if (els.modelPickerMeta) els.modelPickerMeta.textContent = `Modelle nicht ladbar: ${err.message || err}`; }); }); $('closeSettingsButton').addEventListener('click', closeSettings);
   $('saveSettingsButton').addEventListener('click', () => { saveSettings(); closeSettings(); addMessage('system', 'Einstellungen gespeichert.'); }); $('testConnectionButton').addEventListener('click', testConnection);
+  els.autoSpeak?.addEventListener('change', () => { state.autoSpeak = els.autoSpeak.checked; localStorage.setItem('hermes.autoSpeak', String(state.autoSpeak)); if (!state.autoSpeak) stopSpeech(); });
+  els.stopSpeechButton?.addEventListener('click', stopSpeech);
   $('setModelButton')?.addEventListener('click', async () => { saveSettings(); try { await setRemoteModel(state.model, state.provider); } catch (err) { addMessage('error', err.message || String(err)); } });
   els.provider?.addEventListener('change', () => { state.provider = els.provider.value; state.model = ''; if (els.modelFilter) els.modelFilter.value = ''; renderModelOptions(); setConnectionLabel(); });
   els.modelFilter?.addEventListener('input', renderModelOptions);
@@ -415,7 +462,7 @@ function wireEvents() {
   els.prompt.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); $('composer').requestSubmit(); } });
   $('composer').addEventListener('submit', async (ev) => {
     ev.preventDefault(); const text = els.prompt.value.trim(); if ((!text && !state.pendingFiles.length) || state.busy) return;
-    if (!state.apiKey) { addMessage('system', 'Bitte zuerst ⚙ öffnen und API_SERVER_KEY eintragen.'); openSettings(); return; }
+    if (!hasAuth()) { addMessage('system', 'Bitte zuerst ⚙ öffnen und API_SERVER_KEY eintragen oder Server-Key aktivieren.'); openSettings(); return; }
     els.prompt.value = ''; els.prompt.style.height = 'auto';
     if (!state.pendingFiles.length && text.startsWith('/')) {
       addMessage('user', text); resetActivity('WebUI-Kommando wird ausgeführt…'); setBusy(true);
@@ -431,8 +478,8 @@ function wireEvents() {
 }
 
 async function boot() {
-  wireEvents(); setConnectionLabel(); renderSessions(); addMessage('system', 'Hermes Web bereit. Öffne ⚙, trage dein API Token ein und starte eine Session.');
-  if (state.apiKey) {
+  wireEvents(); await loadBootstrap(); if (els.autoSpeak) els.autoSpeak.checked = state.autoSpeak; setConnectionLabel(); renderSessions(); addMessage('system', state.serverAuthAvailable ? 'Hermes Web bereit. Server-Key aktiv; kein API-Token im Browser nötig.' : 'Hermes Web bereit. Öffne ⚙, trage dein API Token ein und starte eine Session.');
+  if (hasAuth()) {
     await loadModelInventory(false).catch((err) => { if (els.menuModelLabel) els.menuModelLabel.textContent = `Modell unbekannt`; console.warn('Model inventory unavailable', err); });
     await loadSessions(false);
     if (state.sessionId) await loadMessages(state.sessionId).catch((err) => addMessage('error', `Historie nicht ladbar: ${err.message || err}`));

@@ -169,7 +169,11 @@ Beispiel für Remote-Modellwechsel, wenn du unterwegs Limits erreichst:
 /model gpt-5.5 --provider openai-codex
 ```
 
-Der Modellwechsel läuft über den lokalen Hermes-Web-Control-Endpoint `POST /__hermes_web/model`, ist mit demselben Bearer-Token wie die Hermes API geschützt und schreibt `model.provider` / `model.default` per `hermes config set`. `/model` ohne Argument öffnet im WebUI eine CLI-ähnliche Auswahl: Provider-Dropdown → Modell-Suche/-Liste → „Modell setzen“. Die Provider-/Modellliste kommt aus Hermes' eigener Inventory-Quelle (`build_models_payload(load_picker_context())`), nicht aus einer manuell gepflegten Liste. Vollständige CLI-/Gateway-Slashcommands werden nicht blind durchgeschleift, weil sie an CLI- bzw. Messaging-State hängen und über den API Server nicht 1:1 dieselbe Semantik haben.
+Der Modellwechsel läuft über den lokalen Hermes-Web-Control-Endpoint `POST /__hermes_web/model`, ist mit demselben Bearer-Token wie die Hermes API geschützt und schreibt `model.provider` / `model.default` per `hermes config set`. `/model` ohne Argument öffnet im WebUI eine CLI-ähnliche Auswahl: Provider-Dropdown → Modell-Suche/-Liste → „Modell setzen“. Die Provider-/Modellliste kommt aus Hermes' eigener Inventory-Quelle (`build_models_payload(load_picker_context())`), nicht aus einer manuell gepflegten Liste. Wenn der Hermes-Web-Server selbst `API_SERVER_KEY` aus der Umgebung oder `~/.hermes/.env` kennt, injiziert er den Token serverseitig für `/hermes/*` und die Web-Control-Endpoints; die PWA muss den API-Key dann nicht im Browser speichern und nach einem Neustart nicht neu abfragen. Vollständige CLI-/Gateway-Slashcommands werden nicht blind durchgeschleift, weil sie an CLI- bzw. Messaging-State hängen und über den API Server nicht 1:1 dieselbe Semantik haben.
+
+### Vorlesen
+
+In den Einstellungen gibt es die Option **Antworten automatisch vorlesen**. Die erste Version nutzt die Browser-/iOS-SpeechSynthesis-Stimme lokal im Gerät und liest die finale Antwort, sobald der Stream vollständig abgeschlossen ist. Codeblöcke werden beim Vorlesen gekürzt/ersetzt. Mit **Vorlesen stoppen** kann die laufende Sprachausgabe abgebrochen werden.
 
 1. Tailscale auf dem iPhone aktivieren.
 2. Caddy-URL der Web-App in Safari öffnen, z. B. `http://host.tailxxxxx.ts.net/ziel/`.

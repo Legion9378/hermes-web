@@ -95,8 +95,14 @@
       </label>
       <label>
         API Token
-        <input id="apiKey" type="password" placeholder="API_SERVER_KEY" />
+        <input id="apiKey" type="password" placeholder="optional, wenn Server-Key aktiv ist" />
       </label>
+      <div id="serverAuthHint" class="hint">Prüfe Server-Key…</div>
+      <label class="check-row">
+        <input id="autoSpeak" type="checkbox" />
+        Antworten automatisch vorlesen
+      </label>
+      <button id="stopSpeechButton" class="secondary" type="button">Vorlesen stoppen</button>
       <label>
         Aktuelle Session-ID
         <input id="sessionId" type="text" placeholder="wird automatisch erzeugt" />

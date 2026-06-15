@@ -86,7 +86,13 @@ class Handler(SimpleHTTPRequestHandler):
         expected = self.api_key or os.environ.get('API_SERVER_KEY', '')
         if not expected:
             return False
-        return self.headers.get('Authorization', '') == f'Bearer {expected}'
+        # Same-origin Hermes Web may use the server-side API_SERVER_KEY instead
+        # of forcing the browser/PWA to persist the raw token. A supplied bearer
+        # token still has to match; an absent token is accepted and the proxy
+        # injects the configured key upstream. Deploy behind Tailscale/Caddy,
+        # not the open web.
+        auth = self.headers.get('Authorization', '')
+        return not auth or auth == f'Bearer {expected}'
 
     def _read_json(self):
         length = int(self.headers.get('Content-Length') or 0)
@@ -114,6 +120,11 @@ class Handler(SimpleHTTPRequestHandler):
             payload = self._read_json()
         except Exception as exc:
             return self._send_json(400, {'error': f'invalid_json: {exc}'})
+        if routed_path == '/__hermes_web/bootstrap':
+            return self._send_json(200, {
+                'server_auth_available': bool(self.api_key or os.environ.get('API_SERVER_KEY', '')),
+                'api_base': '/hermes',
+            })
         if routed_path == '/__hermes_web/models':
             refresh = bool(payload.get('refresh'))
             try:
@@ -172,11 +183,16 @@ print(json.dumps(build_models_payload(load_picker_context(), max_models=1000), e
             body = self.rfile.read(int(length))
 
         headers = {}
+        has_authorization = False
         for key, value in self.headers.items():
             lk = key.lower()
             if lk in HOP_BY_HOP or lk in {'host', 'origin', 'referer'}:
                 continue
+            if lk == 'authorization':
+                has_authorization = True
             headers[key] = value
+        if not has_authorization and self.api_key:
+            headers['Authorization'] = f'Bearer {self.api_key}'
 
         conn_cls = http.client.HTTPSConnection if target.scheme == 'https' else http.client.HTTPConnection
         port = target.port or (443 if target.scheme == 'https' else 80)
