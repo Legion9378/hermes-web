@@ -261,7 +261,7 @@ async function testConnection() {
 
 async function ensureSession() {
   if (state.sessionId) return state.sessionId;
-  const res = await apiFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Hermes Web' }) });
+  const res = await apiFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
   if (!res.ok) throw new Error(`Session konnte nicht erstellt werden: HTTP ${res.status} ${await res.text()}`);
   const data = await res.json();
   state.sessionId = data.id || data.session_id || data.session?.id;
@@ -271,11 +271,11 @@ async function ensureSession() {
   return state.sessionId;
 }
 
-async function newSession() { saveSettings(); state.sessionId = ''; localStorage.removeItem('hermes.sessionId'); clearMessages(); addMessage('system', 'Neue Hermes-Session. Die Session wird beim ersten Senden erstellt.'); setConnectionLabel(); renderSessions(); closeSidebar(); }
+async function newSession() { saveSettings(); state.sessionId = ''; els.sessionId.value = ''; localStorage.removeItem('hermes.sessionId'); clearMessages(); addMessage('system', 'Neue Hermes-Session. Die Session wird beim ersten Senden erstellt.'); setConnectionLabel(); renderSessions(); closeSidebar(); }
 
-async function createNamedSession(title = 'Hermes Web') {
+async function createNamedSession(title = '') {
   saveSettings();
-  const res = await apiFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title || 'Hermes Web', model: state.model || undefined }) });
+  const res = await apiFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title || undefined, model: state.model || undefined }) });
   if (!res.ok) throw new Error(`Session konnte nicht erstellt werden: HTTP ${res.status} ${await res.text()}`);
   const data = await res.json();
   state.sessionId = data.id || data.session_id || data.session?.id;
@@ -320,7 +320,7 @@ async function handleWebCommand(text) {
   if (!cmd) return false;
   if (cmd.command === 'help') { showWebHelp(); return true; }
   if (cmd.command === 'status') { await showStatus(); return true; }
-  if (cmd.command === 'new') { await createNamedSession(cmd.title || 'Hermes Web'); return true; }
+  if (cmd.command === 'new') { await createNamedSession(cmd.title); return true; }
   if (cmd.command === 'model') { await setRemoteModel(cmd.model, cmd.provider); return true; }
   addMessage('system', `Unbekanntes WebUI-Kommando: /${cmd.name}. /help zeigt unterstützte Kommandos.`);
   return true;
@@ -342,7 +342,7 @@ function renderSessions(placeholder = '') {
     const btn = document.createElement('button'); btn.type = 'button'; btn.className = `session-item ${id === state.sessionId ? 'active' : ''}`;
     btn.innerHTML = `<div class="session-title"></div><div class="session-meta"></div>`;
     btn.querySelector('.session-title').textContent = title; btn.querySelector('.session-meta').textContent = `${id?.slice(0, 18) || ''} ${updated}`;
-    btn.addEventListener('click', async () => { state.sessionId = id; localStorage.setItem('hermes.sessionId', id); setConnectionLabel(); renderSessions(); closeSidebar(); await loadMessages(id).catch((err) => addMessage('error', `Historie nicht ladbar: ${err.message || err}`)); });
+    btn.addEventListener('click', async () => { state.sessionId = id; els.sessionId.value = id; localStorage.setItem('hermes.sessionId', id); setConnectionLabel(); renderSessions(); closeSidebar(); await loadMessages(id).catch((err) => addMessage('error', `Historie nicht ladbar: ${err.message || err}`)); });
     els.sessionList.appendChild(btn);
   }
 }

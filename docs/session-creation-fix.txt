@@ -1,0 +1,13 @@
+Session creation fix — 2026-10-02
+
+Cause: automatic creation repeatedly supplied the unique title "Hermes Web", causing API HTTP 400 invalid_title. The ID named in that error belongs to the existing title holder; real ID collisions return 409. Reset and session selection also left the settings session-ID field stale.
+
+Changed src/app.js: omit title on automatic creation and /new without a title; preserve explicit titles; synchronize settings session-ID field on reset and selection.
+Changed sw.js: cache v13.
+Added tests/session.test.mjs: five regression tests; four failed before the fix, all pass afterward.
+
+Verification: node --test tests/app.test.mjs tests/session.test.mjs: 16 pass, 0 fail. node --check src/app.js and git diff --check passed.
+Deployment: copied only src/app.js and sw.js from repository to /home/work/hermes-web; previous assets backed up under /home/work/hermes-web/.deploy-backups/20261002-233929. No service restart and no existing session deletion.
+Both http://127.0.0.1:4173/ and http://127.0.0.1/hermes/ serve matching repository asset bytes (SHA-256 verified). Index, core module, health: HTTP 200.
+Two session POSTs through Caddy returned HTTP 201 with distinct IDs; both GETs returned HTTP 200. Two empty test sessions remain; no model calls were made.
+Actual iPhone UI interactions not verified; reload the Web UI to pick up the new assets.
