@@ -78,6 +78,10 @@ code { color: #c4b5fd; }
 .attachment-chip { border-radius: 999px; padding: 7px 10px; background: rgba(255,255,255,.09); border: 1px solid var(--line); color: var(--text); font-size: 12px; }
 .session-empty { color: var(--muted); font-size: 13px; padding: 12px; }
 .activity-bar { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 9px; padding: 8px max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left)); border-top: 1px solid var(--line); background: rgba(7,8,18,.82); color: var(--muted); font-size: 12px; }
+.company-status { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; max-height: 96px; overflow: auto; color: var(--text); }
+.company-status[hidden], .company-status button[hidden] { display: none; }
+.company-status span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.company-status button { flex-shrink: 0; font-size: 11px; }
 .activity-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--muted); box-shadow: 0 0 0 rgba(0,0,0,0); }
 .activity-bar.busy .activity-dot { background: var(--accent-2); animation: pulse 1s infinite; }
 .activity-bar.model .activity-dot { background: var(--accent); }

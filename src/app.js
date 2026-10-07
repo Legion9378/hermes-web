@@ -31,6 +31,8 @@ const state = {
   sessions: [],
   modelInventory: [],
   pendingFiles: [],
+  companySubmissions: new Map(),
+  authRevision: 0,
   pendingApproval: null,
   assistantBuffer: '',
   activity: { phase: 'idle', busy: false, eventCount: 0, deltaCount: 0, lastEvent: '', lastEventAt: null },
@@ -63,6 +65,7 @@ function setConnectionLabel(text) {
   const fallback = `${safeHostLabel(state.apiBase)}${state.sessionId ? ' · ' + state.sessionId.slice(0, 12) : ''}`;
   const label = text || status || fallback;
   els.connectionLabel.textContent = label;
+  renderCompanyStatus();
   if (els.menuModelLabel) els.menuModelLabel.textContent = status || safeHostLabel(state.apiBase);
 }
 function setBusy(busy) { state.busy = busy; els.sendButton.disabled = busy; els.stopButton.disabled = !busy; els.sendButton.textContent = busy ? 'Läuft…' : 'Senden'; }
@@ -153,6 +156,8 @@ function addToolCard(tool) {
 function clearMessages() { els.messages.textContent = ''; }
 
 function saveSettings() {
+  if (normalizeBase(els.apiBase.value) !== state.apiBase ||
+      (els.apiKey.value.trim() && els.apiKey.value.trim() !== state.apiKey)) state.authRevision += 1;
   state.apiBase = normalizeBase(els.apiBase.value);
   state.apiKey = els.apiKey.value.trim() || state.apiKey;
   state.sessionId = els.sessionId.value.trim();
@@ -376,9 +381,9 @@ function renderAttachments() {
   }
 }
 
-async function buildSessionMessage(text) {
-  if (!state.pendingFiles.length) return text;
-  const payload = await buildInputPayload(text, state.pendingFiles);
+async function buildSessionMessage(text, files = state.pendingFiles) {
+  if (!files.length) return text;
+  const payload = await buildInputPayload(text, files);
   return payload.input[0].content;
 }
 
@@ -451,32 +456,144 @@ function speakAnswer(text, options = {}) {
   window.speechSynthesis.speak(utterance);
 }
 
-async function streamTurn(inputText) {
-  const sessionId = await ensureSession(); const assistant = addMessage('assistant', ''); let gotText = false; state.activeRunId = null; state.assistantBuffer = '';
-  const message = await buildSessionMessage(inputText);
-  const res = await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message }) });
-  if (!res.ok) throw new Error(`Hermes API Fehler: HTTP ${res.status} ${await res.text()}`); if (!res.body) throw new Error('Dieser Browser liefert keinen lesbaren Stream.');
-  const reader = res.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
-  while (true) {
-    const { value, done } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const parts = buffer.split('\n\n'); buffer = parts.pop() || '';
-    for (const part of parts) {
-      const { event, data } = parseSseBlock(part); if (data?.run_id) state.activeRunId = data.run_id;
-      noteActivity(event, data || {});
-      if (isApprovalEvent(event, data)) { showApproval(data); continue; }
-      const delta = extractDelta(event, data);
-      if (delta) { gotText = true; state.assistantBuffer += delta; renderMessageContent(assistant, state.assistantBuffer); els.messages.scrollTop = els.messages.scrollHeight; continue; }
-      if (event.includes('tool') || event.includes('function')) {
-        const toolName = data?.tool_name || data?.name || data?.tool || data?.function?.name || event;
-        if (els.activityDetail) els.activityDetail.textContent = `${toolName} läuft…`;
-      }
-      if (event === 'run.completed' && Array.isArray(data?.messages)) reconcileCompletedMessages(data.messages, assistant);
-      if (event.includes('error')) addMessage('error', typeof data === 'string' ? data : JSON.stringify(data));
-    }
+const COMPANY_NOTICES = new Set([
+  'Ich sichere gerade den laufenden Company-Job und pausiere ihn für unseren Chat.',
+  'Der Company-Job ist gesichert und pausiert. Ich stehe dir jetzt voll zur Verfügung.',
+  'Company-Pause nicht bestätigt. Die Eingabe ist erhalten; der Chat wurde nicht gestartet.',
+]);
+function companyScope() {
+  return JSON.stringify([normalizeBase(state.apiBase), state.authRevision, state.sessionId]);
+}
+function currentSubmission() { return state.companySubmissions.get(companyScope()); }
+function renderCompanyStatus() {
+  if (!els.companyStatus) {
+    const region = document.createElement('div');
+    region.className = 'company-status'; region.setAttribute('role', 'status');
+    const text = document.createElement('span');
+    const check = document.createElement('button'); check.type = 'button'; check.textContent = 'Status prüfen';
+    const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = 'Original erneut senden';
+    check.addEventListener('click', () => reconcileSubmission().catch(() => {}));
+    retry.addEventListener('click', () => retrySubmission().catch(() => {}));
+    region.append(text, check, retry); els.activityBar.appendChild(region);
+    els.companyStatus = region; els.companyText = text; els.companyCheck = check; els.companyRetry = retry;
   }
-  if (!gotText && !assistant.textContent.trim()) assistant.textContent = 'Fertig. Keine Textantwort im Stream erhalten.';
-  const spokenText = state.assistantBuffer || assistant.textContent || '';
-  state.pendingFiles = []; renderAttachments(); await loadSessions(false).catch(() => {});
-  speakAnswer(spokenText);
+  const submission = currentSubmission();
+  els.companyStatus.hidden = !submission;
+  els.companyText.textContent = submission ? [submission.notice, submission.detail].filter(Boolean).join(' ') : '';
+  els.companyCheck.hidden = !submission || ['sending', 'completed'].includes(submission.status);
+  els.companyCheck.disabled = state.busy;
+  els.companyRetry.hidden = !submission || submission.status !== 'blocked';
+  els.companyRetry.disabled = state.busy;
+}
+function companyNotice(data, submission) {
+  if (data?.kind !== 'company' || data.request_id !== submission.requestId ||
+      (data.session_id && data.session_id !== submission.sessionId) || !COMPANY_NOTICES.has(data.text)) return;
+  submission.notice = data.text;
+  renderCompanyStatus();
+}
+async function reconcileSubmission(submission = currentSubmission()) {
+  if (!submission || submission.scope !== companyScope() || state.busy) return;
+  submission.status = 'uncertain';
+  submission.detail = 'Status wird geprüft; Original bleibt im Arbeitsspeicher erhalten.';
+  renderCompanyStatus();
+  try {
+    const res = await apiFetch(`/api/sessions/${encodeURIComponent(submission.sessionId)}/company/receipts/${encodeURIComponent(submission.requestId)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const receipt = await res.json();
+    if (receipt.request_id !== submission.requestId) throw new Error('Abweichende Request-ID');
+    if (submission.scope !== companyScope()) return;
+    for (const notice of receipt.notices || []) companyNotice({ ...notice, kind: 'company', request_id: receipt.request_id }, submission);
+    submission.status = receipt.state === 'completed' ? 'reconciling' : receipt.state;
+    submission.detail = receipt.state === 'blocked'
+      ? 'Nicht gestartet. Das unveränderte Original kann ausdrücklich erneut gesendet werden.'
+      : `Serverstatus: ${receipt.state}. Keine automatische Wiederholung.`;
+    if (receipt.state === 'completed') {
+      // Read history, never replay a completed dispatch. Keep the input if history fails.
+      await loadMessages(submission.sessionId);
+      submission.status = 'completed'; submission.body = ''; submission.text = ''; submission.files = [];
+      submission.detail = 'Abgeschlossen; Verlauf abgeglichen. Keine Wiederholung.';
+    }
+  } catch {
+    submission.status = 'uncertain';
+    submission.detail = 'Status nicht bestätigt (auch bei deaktivierter/alter API). Original erhalten; keine Wiederholung.';
+  }
+  renderCompanyStatus();
+}
+async function retrySubmission() {
+  const submission = currentSubmission();
+  if (!submission || state.busy || submission.status !== 'blocked') return;
+  // Re-read at the action boundary: a stale blocked receipt is not permission to replay.
+  await reconcileSubmission(submission);
+  if (submission.scope !== companyScope() || submission.status !== 'blocked' || state.busy) return;
+  setBusy(true);
+  try { await streamTurn(submission.text, submission); }
+  catch { /* streamTurn retains the exact original and exposes bounded recovery controls */ }
+  finally { setBusy(false); renderCompanyStatus(); }
+}
+
+async function streamTurn(inputText, retained = null) {
+  const files = retained?.files || [...state.pendingFiles];
+  const targetBase = state.apiBase; const targetAuth = state.authRevision;
+  const sessionId = retained?.sessionId || await ensureSession();
+  const submission = retained || {
+    requestId: crypto.randomUUID(), sessionId, scope: companyScope(), text: inputText,
+    files, status: 'sending', notice: '', detail: '',
+  };
+  if (!retained) {
+    // Freeze JSON once, including attachment bytes. Retries never rebuild it from the composer.
+    const message = await buildSessionMessage(inputText, files);
+    if (state.apiBase !== targetBase || state.authRevision !== targetAuth || state.sessionId !== sessionId)
+      throw new Error('Session oder Verbindung wurde während der Vorbereitung geändert; Original bleibt im Eingabefeld.');
+    submission.body = JSON.stringify({ message, request_id: submission.requestId });
+    state.companySubmissions.set(submission.scope, submission);
+    els.prompt.value = ''; state.pendingFiles = []; renderAttachments();
+    addMessage('user', inputText || `[${submission.files.length} Datei(en)]`);
+  }
+  submission.status = 'sending'; submission.detail = 'Anfrage läuft…'; renderCompanyStatus();
+  const assistant = addMessage('assistant', ''); let gotText = false; let completed = false;
+  state.activeRunId = null; state.assistantBuffer = '';
+  try {
+    const res = await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: submission.body });
+    if (!res.ok) throw new Error(`Hermes API Fehler: HTTP ${res.status}`);
+    if (!res.body) throw new Error('Dieser Browser liefert keinen lesbaren Stream.');
+    const reader = res.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read(); if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split(/\r?\n\r?\n/); buffer = parts.pop() || '';
+      for (const part of parts) {
+        const { event, data } = parseSseBlock(part);
+        if (event === 'company.status') { companyNotice(data, submission); continue; }
+        if (data?.run_id) state.activeRunId = data.run_id;
+        noteActivity(event, data || {});
+        if (isApprovalEvent(event, data)) { showApproval(data); continue; }
+        const delta = extractDelta(event, data);
+        if (delta) { gotText = true; state.assistantBuffer += delta; renderMessageContent(assistant, state.assistantBuffer); continue; }
+        if (event.includes('tool') || event.includes('function')) {
+          const toolName = data?.tool_name || data?.name || data?.tool || data?.function?.name || event;
+          els.activityDetail.textContent = `${toolName} läuft…`;
+        }
+        if (event === 'run.completed') {
+          completed = true;
+          if (Array.isArray(data?.messages)) reconcileCompletedMessages(data.messages, assistant);
+        }
+        if (event.includes('error')) throw new Error('Server meldet einen Streamfehler.');
+      }
+    }
+    if (!completed) throw new Error('Stream ohne bestätigten Abschluss beendet.');
+    submission.status = 'completed'; submission.body = ''; submission.text = ''; submission.files = [];
+    submission.detail = '';
+    if (!submission.notice) state.companySubmissions.delete(submission.scope);
+    renderCompanyStatus();
+    if (!gotText && !assistant.textContent.trim()) assistant.textContent = 'Fertig. Keine Textantwort im Stream erhalten.';
+    await loadSessions(false).catch(() => {});
+    speakAnswer(state.assistantBuffer || assistant.textContent || '');
+  } catch (err) {
+    submission.status = 'uncertain';
+    submission.detail = `${err.message || err} Originaltext und Anhänge erhalten; Status prüfen, nicht erneut absenden.`;
+    renderCompanyStatus();
+    throw err;
+  }
 }
 
 function reconcileCompletedMessages(messages, liveAssistantEl) {
@@ -507,18 +624,19 @@ function wireEvents() {
   els.prompt.addEventListener('input', () => { els.prompt.style.height = 'auto'; els.prompt.style.height = `${Math.min(els.prompt.scrollHeight, 150)}px`; });
   els.prompt.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); $('composer').requestSubmit(); } });
   $('composer').addEventListener('submit', async (ev) => {
-    ev.preventDefault(); const text = els.prompt.value.trim(); if ((!text && !state.pendingFiles.length) || state.busy) return;
+    ev.preventDefault(); const text = els.prompt.value; if ((!text.trim() && !state.pendingFiles.length) || state.busy) return;
+    if (currentSubmission() && currentSubmission().status !== 'completed') { renderCompanyStatus(); return; }
     if (!hasAuth()) { addMessage('system', 'Bitte zuerst ⚙ öffnen und API_SERVER_KEY eintragen oder Server-Key aktivieren.'); openSettings(); return; }
-    els.prompt.value = ''; els.prompt.style.height = 'auto';
+    els.prompt.style.height = 'auto';
     if (!state.pendingFiles.length && text.startsWith('/')) {
-      addMessage('user', text); resetActivity('WebUI-Kommando wird ausgeführt…'); setBusy(true);
+      els.prompt.value = ''; addMessage('user', text); resetActivity('WebUI-Kommando wird ausgeführt…'); setBusy(true);
       try { await handleWebCommand(text); }
       catch (err) { noteActivity('error', { error: err.message || String(err) }); addMessage('error', err.message || String(err)); }
       finally { resetActivity('Bereit'); setBusy(false); setConnectionLabel(); els.prompt.focus(); }
       return;
     }
-    addMessage('user', text || `[${state.pendingFiles.length} Datei(en)]`); resetActivity('Anfrage wird an Server gesendet…'); setBusy(true); setConnectionLabel('Hermes arbeitet…');
-    try { await streamTurn(text); } catch (err) { noteActivity('error', { error: err.message || String(err) }); addMessage('error', err.message || String(err)); }
+    resetActivity('Anfrage wird an Server gesendet…'); setBusy(true); setConnectionLabel('Hermes arbeitet…');
+    try { await streamTurn(text); } catch (err) { noteActivity('error', { error: err.message || String(err) }); }
     finally { setBusy(false); state.activeRunId = null; setConnectionLabel(); els.prompt.focus(); }
   });
 }
